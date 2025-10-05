@@ -1,0 +1,112 @@
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      PGDATA: ${PGDATA}
+      DEMO_USER_PASS: ${SQLPAD_CONNECTIONS__avia_demo__password}
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./pgdata:${PGDATA}
+      - ./docker-entrypoint-initdb.d:/docker-entrypoint-initdb.d
+      - ./demo-flight-db:/demo-data
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+    command: >
+      postgres -c max_connections=1000
+               -c shared_buffers=256MB
+               -c effective_cache_size=768MB
+               -c maintenance_work_mem=64MB
+               -c checkpoint_completion_target=0.7
+               -c wal_buffers=16MB
+               -c default_statistics_target=100
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}" ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+    tty: true
+    stdin_open: true
+    depends_on:
+      download-file:
+        condition: service_completed_successfully
+  sqlpad:
+    # To use Dockerfile at root of this project, use build instead of image
+    # build: ../../
+    image: sqlpad/sqlpad:latest
+    hostname: 'sqlpad'
+    ports:
+      - '3000:3000'
+    environment:
+      SQLPAD_ADMIN: ${SQLPAD_ADMIN}
+      SQLPAD_ADMIN_PASSWORD: ${SQLPAD_ADMIN_PASSWORD}
+      SQLPAD_APP_LOG_LEVEL: ${SQLPAD_APP_LOG_LEVEL}
+      SQLPAD_WEB_LOG_LEVEL: ${SQLPAD_WEB_LOG_LEVEL}
+      SQLPAD_SEED_DATA_PATH: ${SQLPAD_SEED_DATA_PATH}
+      SQLPAD_CONNECTIONS__avia_demo__name: ${SQLPAD_CONNECTIONS__avia_demo__name}
+      SQLPAD_CONNECTIONS__avia_demo__driver: ${SQLPAD_CONNECTIONS__avia_demo__driver}
+      SQLPAD_CONNECTIONS__avia_demo__host: ${SQLPAD_CONNECTIONS__avia_demo__host}
+      SQLPAD_CONNECTIONS__avia_demo__database: ${SQLPAD_CONNECTIONS__avia_demo__database}
+      SQLPAD_CONNECTIONS__avia_demo__username: ${SQLPAD_CONNECTIONS__avia_demo__username}
+      SQLPAD_CONNECTIONS__avia_demo__password: ${SQLPAD_CONNECTIONS__avia_demo__password}
+      SQLPAD_CONNECTIONS__avia_demo__multiStatementTransactionEnabled: ${SQLPAD_CONNECTIONS__avia_demo__multiStatementTransactionEnabled}
+      SQLPAD_CONNECTIONS__avia_demo__idleTimeoutSeconds: ${SQLPAD_CONNECTIONS__avia_demo__idleTimeoutSeconds}
+    volumes:
+      - ./seed-data:/etc/sqlpad/seed-data
+    depends_on:
+      postgres:
+        condition: service_healthy
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
+      PGADMIN_LISTEN_PORT: ${PGADMIN_LISTEN_PORT}
+    ports:
+      - 15432:${PGADMIN_LISTEN_PORT}
+    volumes:
+      - pgadmin:/var/lib/pgadmin
+    depends_on:
+      postgres:
+        condition: service_healthy
+  drawdb:
+    build: ./drawdb
+    hostname: 'drawdb'
+    ports:
+      - '3001:80'
+    volumes:
+      - ./seed-data:/etc/sqlpad/seed-data
+    depends_on:
+      postgres:
+        condition: service_healthy
+  download-file:
+    image: curlimages/curl:latest
+    command: |
+      sh -c "
+      if [ ! -f /data/demo-20250901-3m.sql.gz ]; then
+        echo 'Downloading file...'
+        wget -O /data/demo-20250901-3m.sql.gz https://edu.postgrespro.ru/demo-20250901-3m.sql.gz
+      else
+        echo 'File already exists, skipping download'
+      fi
+      "
+    volumes:
+      - ./demo-flight-db:/data
+    user: root
+    restart: on-failure:1
+
+volumes:
+  pgdata:
+    driver: local
+  pgadmin:
+  sqlpad:
