@@ -1,4 +1,22 @@
 services:
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./nginx/conf.d:/etc/nginx/conf.d
+      - ./nginx/ssl:/etc/nginx/ssl
+    depends_on:
+      - postgres
+      - sqlpad
+      - pgadmin
+      - drawdb
+    restart: unless-stopped
+    networks:
+      - app-network
+
   postgres:
     image: postgres:18
     environment:
@@ -7,8 +25,9 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
       PGDATA: ${PGDATA}
       DEMO_USER_PASS: ${SQLPAD_CONNECTIONS__avia_demo__password}
-    ports:
-      - "5432:5432"
+    # Убираем публичные порты
+    # ports:
+    #   - "5432:5432"
     volumes:
       - ./pgdata:${PGDATA}
       - ./docker-entrypoint-initdb.d:/docker-entrypoint-initdb.d
@@ -37,16 +56,18 @@ services:
     restart: unless-stopped
     tty: true
     stdin_open: true
+    networks:
+      - app-network
     depends_on:
       download-file:
         condition: service_completed_successfully
+
   sqlpad:
-    # To use Dockerfile at root of this project, use build instead of image
-    # build: ../../
     image: sqlpad/sqlpad:latest
     hostname: 'sqlpad'
-    ports:
-      - '3000:3000'
+    # Убираем публичные порты
+    # ports:
+    #   - '3000:3000'
     environment:
       SQLPAD_ADMIN: ${SQLPAD_ADMIN}
       SQLPAD_ADMIN_PASSWORD: ${SQLPAD_ADMIN_PASSWORD}
@@ -63,32 +84,43 @@ services:
       SQLPAD_CONNECTIONS__avia_demo__idleTimeoutSeconds: ${SQLPAD_CONNECTIONS__avia_demo__idleTimeoutSeconds}
     volumes:
       - ./seed-data:/etc/sqlpad/seed-data
+    networks:
+      - app-network
     depends_on:
       postgres:
         condition: service_healthy
+
   pgadmin:
     image: dpage/pgadmin4:latest
     environment:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
       PGADMIN_LISTEN_PORT: ${PGADMIN_LISTEN_PORT}
-    ports:
-      - 15432:${PGADMIN_LISTEN_PORT}
+    # Убираем публичные порты
+    # ports:
+    #   - 15432:${PGADMIN_LISTEN_PORT}
     volumes:
       - pgadmin:/var/lib/pgadmin
+    networks:
+      - app-network
     depends_on:
       postgres:
         condition: service_healthy
+
   drawdb:
     build: ./drawdb
     hostname: 'drawdb'
-    ports:
-      - '3001:80'
+    # Убираем публичные порты
+    # ports:
+    #   - '3001:80'
     volumes:
       - ./seed-data:/etc/sqlpad/seed-data
+    networks:
+      - app-network
     depends_on:
       postgres:
         condition: service_healthy
+
   download-file:
     image: curlimages/curl:latest
     command: |
@@ -104,9 +136,15 @@ services:
       - ./demo-flight-db:/data
     user: root
     restart: on-failure:1
+    networks:
+      - app-network
 
 volumes:
   pgdata:
     driver: local
   pgadmin:
   sqlpad:
+
+networks:
+  app-network:
+    driver: bridge
